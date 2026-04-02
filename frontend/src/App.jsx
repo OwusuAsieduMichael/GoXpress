@@ -10,12 +10,14 @@ import CustomersPage from "./pages/Customers.jsx";
 import ReportsPage from "./pages/Reports.jsx";
 import InventoryPage from "./pages/Inventory.jsx";
 import HelpPage from "./pages/Help.jsx";
+import DiagnosticPage from "./pages/DiagnosticPage.jsx";
 
 const App = () => (
   <Routes>
     <Route path="/" element={<Landing />} />
     <Route path="/login" element={<LoginPage mode="login" />} />
     <Route path="/signup" element={<LoginPage mode="signup" />} />
+    <Route path="/diagnostic" element={<DiagnosticPage />} />
     <Route
       element={
         <ProtectedRoute>
