@@ -85,38 +85,40 @@ export const createPayment = asyncHandler(async (req, res) => {
  * POST /api/payments/momo/initiate
  */
 export const initiateMoMoPayment = asyncHandler(async (req, res) => {
-  const { saleId, amount, phone, email } = req.body;
+  const { saleId, amount, phone, email, provider } = req.body;
 
   // Validation
-  if (!saleId || !amount || !phone) {
-    throw new ApiError(400, 'Sale ID, amount, and phone number are required');
+  if (!amount || !phone) {
+    throw new ApiError(400, 'Amount and phone number are required');
   }
 
-  // Verify sale exists
-  const saleResult = await pool.query(
-    'SELECT id, total_amount, status FROM sales WHERE id = $1',
-    [saleId]
-  );
+  // If saleId provided, verify sale exists
+  if (saleId) {
+    const saleResult = await pool.query(
+      'SELECT id, total_amount, status FROM sales WHERE id = $1',
+      [saleId]
+    );
 
-  if (saleResult.rowCount === 0) {
-    throw new ApiError(404, 'Sale not found');
-  }
+    if (saleResult.rowCount === 0) {
+      throw new ApiError(404, 'Sale not found');
+    }
 
-  const sale = saleResult.rows[0];
+    const sale = saleResult.rows[0];
 
-  // Verify amount matches sale total
-  if (parseFloat(amount) !== parseFloat(sale.total_amount)) {
-    throw new ApiError(400, 'Payment amount must match sale total');
-  }
+    // Verify amount matches sale total
+    if (parseFloat(amount) !== parseFloat(sale.total_amount)) {
+      throw new ApiError(400, 'Payment amount must match sale total');
+    }
 
-  // Check if payment already exists for this sale
-  const existingPayment = await pool.query(
-    'SELECT id, status, reference FROM payments WHERE sale_id = $1',
-    [saleId]
-  );
+    // Check if payment already exists for this sale
+    const existingPayment = await pool.query(
+      'SELECT id, status, reference FROM payments WHERE sale_id = $1',
+      [saleId]
+    );
 
-  if (existingPayment.rowCount > 0 && existingPayment.rows[0].status === 'completed') {
-    throw new ApiError(400, 'Payment already completed for this sale');
+    if (existingPayment.rowCount > 0 && existingPayment.rows[0].status === 'completed') {
+      throw new ApiError(400, 'Payment already completed for this sale');
+    }
   }
 
   try {
@@ -125,53 +127,60 @@ export const initiateMoMoPayment = asyncHandler(async (req, res) => {
       amount,
       phone,
       email,
-      saleId,
+      provider: provider || 'mtn', // Use provided network or default to MTN
+      saleId: saleId || `temp-${Date.now()}`,
       metadata: {
         user_id: req.user?.userId,
-        cashier: req.user?.username || 'system'
+        cashier: req.user?.username || 'system',
+        has_sale: !!saleId
       }
     });
 
-    // Create or update payment record with pending status
-    const paymentResult = await pool.query(
-      `INSERT INTO payments 
-        (sale_id, amount, payment_method, status, reference, customer_phone, customer_email, provider, provider_response)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       ON CONFLICT (sale_id) 
-       DO UPDATE SET
-         amount = EXCLUDED.amount,
-         payment_method = EXCLUDED.payment_method,
-         status = EXCLUDED.status,
-         reference = EXCLUDED.reference,
-         customer_phone = EXCLUDED.customer_phone,
-         customer_email = EXCLUDED.customer_email,
-         provider = EXCLUDED.provider,
-         provider_response = EXCLUDED.provider_response,
-         updated_at = CURRENT_TIMESTAMP
-       RETURNING *`,
-      [
-        saleId,
-        amount,
-        'mobile_money',
-        'pending',
-        paystackResponse.reference,
-        phone,
-        email || null,
-        'paystack',
-        JSON.stringify(paystackResponse.data)
-      ]
-    );
+    // Create or update payment record with pending status (only if saleId exists)
+    if (saleId) {
+      await pool.query(
+        `INSERT INTO payments 
+          (sale_id, amount_paid, amount_received, method, status, reference, customer_phone, customer_email, provider, provider_response)
+         VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (sale_id) 
+         DO UPDATE SET
+           amount_paid = EXCLUDED.amount_paid,
+           amount_received = EXCLUDED.amount_received,
+           method = EXCLUDED.method,
+           status = EXCLUDED.status,
+           reference = EXCLUDED.reference,
+           customer_phone = EXCLUDED.customer_phone,
+           customer_email = EXCLUDED.customer_email,
+           provider = EXCLUDED.provider,
+           provider_response = EXCLUDED.provider_response,
+           updated_at = CURRENT_TIMESTAMP
+         RETURNING *`,
+        [
+          saleId,
+          amount,
+          'mobile_money',
+          'pending',
+          paystackResponse.reference,
+          phone,
+          email || null,
+          'paystack',
+          JSON.stringify(paystackResponse.data)
+        ]
+      );
+    }
 
     res.status(200).json({
       success: true,
-      message: 'Mobile Money payment initiated. Customer will receive a prompt on their phone.',
+      message: paystackResponse.data.status === 'send_otp' 
+        ? 'Customer will receive SMS with code. Enter the code to complete payment.'
+        : 'Customer should approve payment on their phone.',
       payment: {
-        id: paymentResult.rows[0].id,
+        id: saleId || null,
         reference: paystackResponse.reference,
         status: 'pending',
         amount: amount,
-        accessCode: paystackResponse.data.access_code,
-        authorizationUrl: paystackResponse.data.authorization_url
+        requiresOTP: paystackResponse.data.status === 'send_otp',
+        chargeStatus: paystackResponse.data.status
       }
     });
 
@@ -364,7 +373,7 @@ export const getPaymentBySaleId = asyncHandler(async (req, res) => {
 
   const result = await pool.query(
     `SELECT 
-      id, sale_id, amount, payment_method, status, 
+      id, sale_id, amount_paid as amount, method as payment_method, status, 
       reference, customer_phone, customer_email, 
       provider, created_at, updated_at
      FROM payments 
@@ -383,48 +392,151 @@ export const getPaymentBySaleId = asyncHandler(async (req, res) => {
 });
 
 /**
- * Check payment status (polling endpoint)
- * GET /api/payments/status/:reference
+ * Submit OTP for Mobile Money payment
+ * POST /api/payments/momo/submit-otp
  */
+export const submitMoMoOTP = asyncHandler(async (req, res) => {
+  const { reference, otp } = req.body;
+
+  if (!reference || !otp) {
+    throw new ApiError(400, 'Reference and OTP are required');
+  }
+
+  try {
+    // Submit OTP to Paystack
+    const result = await paystackService.submitOTP(reference, otp);
+
+    console.log('📤 OTP submitted, waiting 5 seconds before verification...');
+    
+    // Wait 5 seconds to give Paystack time to process
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    // Verify the transaction to get final status
+    const verification = await paystackService.verifyTransaction(reference);
+
+    console.log('✅ Verification after OTP:', verification.status);
+
+    // Update payment record if exists
+    const paymentResult = await pool.query(
+      'SELECT sale_id FROM payments WHERE reference = $1',
+      [reference]
+    );
+
+    if (paymentResult.rowCount > 0) {
+      const saleId = paymentResult.rows[0].sale_id;
+      const newStatus = verification.success ? 'completed' : verification.status;
+
+      await pool.query(
+        `UPDATE payments 
+         SET status = $1, 
+             provider_response = $2,
+             updated_at = CURRENT_TIMESTAMP 
+         WHERE reference = $3`,
+        [newStatus, JSON.stringify(verification.fullResponse), reference]
+      );
+
+      // Update sale status if payment successful
+      if (verification.success && saleId) {
+        await pool.query(
+          `UPDATE sales SET status = 'completed' WHERE id = $1`,
+          [saleId]
+        );
+      }
+    }
+
+    res.status(200).json({
+      success: verification.success,
+      status: verification.status,
+      message: verification.success 
+        ? 'Payment completed successfully! 🎉' 
+        : verification.status === 'pending'
+        ? 'Payment is being processed. Please wait...'
+        : `Payment ${verification.status}. ${verification.fullResponse?.gateway_response || 'Please try again.'}`,
+      payment: {
+        reference: reference,
+        amount: verification.amount,
+        status: verification.status,
+        paidAt: verification.paidAt,
+        gatewayResponse: verification.fullResponse?.gateway_response
+      }
+    });
+
+  } catch (error) {
+    console.error('OTP submission error:', error);
+    throw new ApiError(500, error.message || 'Failed to submit OTP');
+  }
+});
 export const checkPaymentStatus = asyncHandler(async (req, res) => {
   const { reference } = req.params;
 
-  const result = await pool.query(
-    'SELECT status, amount, payment_method, updated_at FROM payments WHERE reference = $1',
-    [reference]
-  );
+  // First, try to verify with Paystack directly
+  try {
+    const verification = await paystackService.verifyTransaction(reference);
+    
+    // Check if we have a payment record in database
+    const result = await pool.query(
+      'SELECT status, amount_paid as amount, method as payment_method, updated_at FROM payments WHERE reference = $1',
+      [reference]
+    );
 
-  if (result.rowCount === 0) {
-    throw new ApiError(404, 'Payment not found');
-  }
-
-  const payment = result.rows[0];
-
-  // If still pending, check with Paystack
-  if (payment.status === 'pending') {
-    try {
-      const verification = await paystackService.verifyTransaction(reference);
+    let currentStatus = verification.status;
+    
+    // If payment exists in DB, update it
+    if (result.rowCount > 0) {
+      const payment = result.rows[0];
       
-      if (verification.status !== 'pending') {
+      // If status changed, update database
+      if (payment.status !== verification.status) {
         const newStatus = verification.success ? 'completed' : 'failed';
         
         await pool.query(
           'UPDATE payments SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE reference = $2',
           [newStatus, reference]
         );
-
-        payment.status = newStatus;
+        
+        currentStatus = newStatus;
+      } else {
+        currentStatus = payment.status;
       }
-    } catch (error) {
-      console.error('Status check error:', error);
     }
-  }
 
-  res.status(200).json({
-    success: true,
-    status: payment.status,
-    amount: payment.amount,
-    paymentMethod: payment.payment_method,
-    lastUpdated: payment.updated_at
-  });
+    res.status(200).json({
+      success: true,
+      status: currentStatus,
+      amount: verification.amount,
+      paymentMethod: 'mobile_money',
+      lastUpdated: new Date().toISOString(),
+      paystackStatus: verification.status,
+      verified: verification.success
+    });
+  } catch (error) {
+    console.error('Status check error:', error);
+    
+    // If Paystack verification fails, check database only
+    const result = await pool.query(
+      'SELECT status, amount_paid as amount, method as payment_method, updated_at FROM payments WHERE reference = $1',
+      [reference]
+    );
+
+    if (result.rowCount === 0) {
+      // No record found - payment might still be pending
+      res.status(200).json({
+        success: true,
+        status: 'pending',
+        amount: 0,
+        paymentMethod: 'mobile_money',
+        lastUpdated: new Date().toISOString()
+      });
+      return;
+    }
+
+    const payment = result.rows[0];
+    res.status(200).json({
+      success: true,
+      status: payment.status,
+      amount: payment.amount,
+      paymentMethod: payment.payment_method,
+      lastUpdated: payment.updated_at
+    });
+  }
 });

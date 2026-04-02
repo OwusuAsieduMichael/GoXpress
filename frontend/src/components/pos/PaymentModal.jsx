@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import Modal from "../common/Modal.jsx";
+import MobileMoneyPayment from "../MobileMoneyPayment.jsx";
 import { currency } from "../../utils/format.js";
 
-const PaymentModal = ({ open, total, onClose, onConfirm }) => {
+const PaymentModal = ({ open, total, onClose, onConfirm, onCreateSaleForMomo }) => {
   const [method, setMethod] = useState("cash");
   const [cashReceived, setCashReceived] = useState(total);
   const [momoPhone, setMomoPhone] = useState("");
   const [momoAmount, setMomoAmount] = useState(total);
-  const [cardNumber, setCardNumber] = useState("");
-  const [cardExpiry, setCardExpiry] = useState("");
-  const [cardCvv, setCardCvv] = useState("");
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -20,9 +18,6 @@ const PaymentModal = ({ open, total, onClose, onConfirm }) => {
       setMomoAmount(total);
       setMethod("cash");
       setMomoPhone("");
-      setCardNumber("");
-      setCardExpiry("");
-      setCardCvv("");
       setProcessing(false);
       setError("");
       setSuccess("");
@@ -53,23 +48,6 @@ const PaymentModal = ({ open, total, onClose, onConfirm }) => {
     return "";
   };
 
-  const validateCard = () => {
-    const normalizedNumber = String(cardNumber || "").replace(/\s+/g, "");
-    const normalizedExpiry = String(cardExpiry || "").trim();
-    const normalizedCvv = String(cardCvv || "").trim();
-
-    if (!/^\d{12,19}$/.test(normalizedNumber)) {
-      return "Enter a valid card number.";
-    }
-    if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(normalizedExpiry)) {
-      return "Expiry date must be in MM/YY format.";
-    }
-    if (!/^\d{3,4}$/.test(normalizedCvv)) {
-      return "CVV must be 3 or 4 digits.";
-    }
-    return "";
-  };
-
   const buildPayload = () => {
     if (method === "cash") {
       return {
@@ -80,23 +58,12 @@ const PaymentModal = ({ open, total, onClose, onConfirm }) => {
       };
     }
 
-    if (method === "mobile_money") {
-      return {
-        method: "mobile_money",
-        amount: Number(momoAmount || 0),
-        amountReceived: Number(momoAmount || 0),
-        status: "success",
-        reference: `MOMO-${String(momoPhone || "").slice(-4)}`
-      };
-    }
-
-    const normalizedNumber = String(cardNumber || "").replace(/\s+/g, "");
     return {
-      method: "card",
-      amount: Number(total || 0),
-      amountReceived: Number(total || 0),
+      method: "mobile_money",
+      amount: Number(momoAmount || 0),
+      amountReceived: Number(momoAmount || 0),
       status: "success",
-      reference: `CARD-****${normalizedNumber.slice(-4)}`
+      reference: `MOMO-${String(momoPhone || "").slice(-4)}`
     };
   };
 
@@ -104,8 +71,12 @@ const PaymentModal = ({ open, total, onClose, onConfirm }) => {
     setError("");
     setSuccess("");
 
-    const validationError =
-      method === "cash" ? validateCash() : method === "mobile_money" ? validateMomo() : validateCard();
+    // For Mobile Money, don't validate here - let the MobileMoneyPayment component handle it
+    if (method === "mobile_money") {
+      return;
+    }
+
+    const validationError = validateCash();
 
     if (validationError) {
       setError(validationError);
@@ -115,16 +86,6 @@ const PaymentModal = ({ open, total, onClose, onConfirm }) => {
     setProcessing(true);
 
     try {
-      if (method === "mobile_money") {
-        setSuccess("Confirming Mobile Money transfer...");
-        await new Promise((resolve) => setTimeout(resolve, 900));
-        setSuccess("Payment successful.");
-      } else if (method === "card") {
-        setSuccess("Processing card payment securely...");
-        await new Promise((resolve) => setTimeout(resolve, 900));
-        setSuccess("Payment successful.");
-      }
-
       await onConfirm(buildPayload());
     } catch (err) {
       setError(err.message || "Payment failed. Please retry.");
@@ -137,9 +98,7 @@ const PaymentModal = ({ open, total, onClose, onConfirm }) => {
     ? "Processing..."
     : method === "cash"
       ? "Confirm Cash Payment"
-      : method === "mobile_money"
-        ? "Confirm Mobile Money"
-        : "Confirm Card Payment";
+      : "Confirm Mobile Money";
 
   const change = useMemo(
     () => Math.max(0, Number(cashReceived || 0) - Number(total || 0)),
@@ -175,14 +134,6 @@ const PaymentModal = ({ open, total, onClose, onConfirm }) => {
           >
             Mobile Money
           </button>
-          <button
-            type="button"
-            className={method === "card" ? "payment-tab active" : "payment-tab"}
-            onClick={() => setMethod("card")}
-            disabled={processing}
-          >
-            Card
-          </button>
         </div>
 
         <article className="payment-summary-card">
@@ -207,86 +158,55 @@ const PaymentModal = ({ open, total, onClose, onConfirm }) => {
         ) : null}
 
         {method === "mobile_money" ? (
-          <div className="grid two">
-            <label>
-              Phone Number
-              <input
-                type="tel"
-                placeholder="024xxxxxxx"
-                value={momoPhone}
-                onChange={(event) => setMomoPhone(event.target.value)}
-              />
-            </label>
-            <label>
-              Amount
-              <input
-                type="number"
-                min={total}
-                step="0.01"
-                value={momoAmount}
-                onChange={(event) => setMomoAmount(Number(event.target.value || 0))}
-              />
-            </label>
-          </div>
-        ) : null}
-
-        {method === "card" ? (
-          <div className="grid two">
-            <label className="payment-card-number">
-              Card Number
-              <input
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="4111 1111 1111 1111"
-                value={cardNumber}
-                onChange={(event) => setCardNumber(event.target.value)}
-              />
-            </label>
-            <label>
-              Expiry Date (MM/YY)
-              <input
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="MM/YY"
-                value={cardExpiry}
-                onChange={(event) => setCardExpiry(event.target.value)}
-              />
-            </label>
-            <label>
-              CVV
-              <input
-                type="password"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="123"
-                value={cardCvv}
-                onChange={(event) => setCardCvv(event.target.value)}
-              />
-            </label>
+          <div className="momo-payment-wrapper">
+            <MobileMoneyPayment
+              saleId={null}
+              amount={total}
+              onSuccess={(paymentData) => {
+                setSuccess("Payment successful!");
+                setTimeout(() => {
+                  onConfirm({
+                    method: "mobile_money",
+                    amount: Number(total),
+                    amountReceived: Number(total),
+                    status: "success",
+                    reference: paymentData.reference || paymentData
+                  });
+                }, 500);
+              }}
+              onCancel={() => {
+                onClose();
+              }}
+              onError={(errorMsg) => {
+                setError(errorMsg);
+              }}
+            />
           </div>
         ) : null}
 
         {success ? <p className="success-text">{success}</p> : null}
         {error ? <p className="error-text">{error}</p> : null}
 
-        <div className="totals">
-          <p>
-            <span>Total payable</span>
-            <strong>{currency(total)}</strong>
-          </p>
-          {method === "cash" ? (
-            <p>
-              <span>Change</span>
-              <strong>{currency(change)}</strong>
-            </p>
-          ) : null}
-        </div>
+        {method !== "mobile_money" && (
+          <>
+            <div className="totals">
+              <p>
+                <span>Total payable</span>
+                <strong>{currency(total)}</strong>
+              </p>
+              {method === "cash" ? (
+                <p>
+                  <span>Change</span>
+                  <strong>{currency(change)}</strong>
+                </p>
+              ) : null}
+            </div>
 
-        <button type="button" className="primary-btn" disabled={processing} onClick={handleConfirm}>
-          {confirmLabel}
-        </button>
+            <button type="button" className="primary-btn" disabled={processing} onClick={handleConfirm}>
+              {confirmLabel}
+            </button>
+          </>
+        )}
       </div>
     </Modal>
   );

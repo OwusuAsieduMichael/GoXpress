@@ -55,12 +55,13 @@ class PaystackService {
   }
 
   /**
-   * Initialize Mobile Money transaction
+   * Initialize Mobile Money transaction (Direct Charge)
+   * This sends OTP to customer's phone
    * @param {Object} data - Transaction data
    * @returns {Promise<Object>} - Paystack response
    */
   async initializeMobileMoneyTransaction(data) {
-    const { amount, phone, email, saleId, metadata = {} } = data;
+    const { amount, phone, email, provider, saleId, metadata = {} } = data;
 
     if (!this.secretKey) {
       throw new Error('Paystack is not configured. Please add PAYSTACK_SECRET_KEY to environment variables.');
@@ -71,22 +72,23 @@ class PaystackService {
     const amountInPesewas = this.convertToPesewas(amount);
     const reference = this.generateReference();
     
-    // Generate email if not provided
-    const customerEmail = email || `customer-${Date.now()}@goxpress.local`;
+    // Generate email if not provided (use a valid domain)
+    const customerEmail = email || `customer${Date.now()}@goxpress.com`;
 
+    // Use the CHARGE endpoint for direct Mobile Money charging
     const payload = {
       email: customerEmail,
       amount: amountInPesewas,
       currency: 'GHS',
       reference: reference,
-      channels: ['mobile_money'],
       mobile_money: {
         phone: formattedPhone,
-        provider: 'mtn' // Paystack auto-detects, but we can specify
+        provider: provider || 'mtn' // Use provided network or default to MTN
       },
       metadata: {
         sale_id: saleId,
         phone: formattedPhone,
+        provider: provider || 'mtn',
         custom_fields: [
           {
             display_name: 'Sale ID',
@@ -99,8 +101,16 @@ class PaystackService {
     };
 
     try {
+      console.log('📤 Sending charge request to Paystack:', {
+        amount: amountInPesewas,
+        phone: formattedPhone,
+        provider: provider || 'mtn',
+        reference: reference
+      });
+
+      // Use /charge endpoint for direct charge
       const response = await axios.post(
-        `${PAYSTACK_BASE_URL}/transaction/initialize`,
+        `${PAYSTACK_BASE_URL}/charge`,
         payload,
         {
           headers: {
@@ -110,16 +120,20 @@ class PaystackService {
         }
       );
 
+      console.log('✅ Paystack charge response:', JSON.stringify(response.data, null, 2));
+      console.log('📊 Charge status:', response.data.data?.status);
+      console.log('📊 Display text:', response.data.data?.display_text);
+
       return {
         success: true,
         data: response.data.data,
         reference: reference,
-        message: 'Transaction initialized successfully'
+        message: 'Mobile Money charge initiated successfully'
       };
     } catch (error) {
-      console.error('Paystack initialization error:', error.response?.data || error.message);
+      console.error('❌ Paystack charge error:', JSON.stringify(error.response?.data, null, 2) || error.message);
       throw new Error(
-        error.response?.data?.message || 'Failed to initialize payment'
+        error.response?.data?.message || 'Failed to initiate mobile money charge'
       );
     }
   }
@@ -135,6 +149,8 @@ class PaystackService {
     }
 
     try {
+      console.log(`🔍 Verifying transaction: ${reference}`);
+      
       const response = await axios.get(
         `${PAYSTACK_BASE_URL}/transaction/verify/${reference}`,
         {
@@ -145,6 +161,13 @@ class PaystackService {
       );
 
       const data = response.data.data;
+      
+      console.log(`📊 Paystack verification response for ${reference}:`, {
+        status: data.status,
+        amount: data.amount,
+        channel: data.channel,
+        paid_at: data.paid_at
+      });
 
       return {
         success: data.status === 'success',
@@ -163,7 +186,7 @@ class PaystackService {
         fullResponse: data
       };
     } catch (error) {
-      console.error('Paystack verification error:', error.response?.data || error.message);
+      console.error('❌ Paystack verification error:', error.response?.data || error.message);
       throw new Error(
         error.response?.data?.message || 'Failed to verify payment'
       );
@@ -188,55 +211,25 @@ class PaystackService {
   }
 
   /**
-   * Get transaction status
+   * Submit OTP for Mobile Money charge
    * @param {string} reference - Transaction reference
-   * @returns {Promise<string>} - Status (success, failed, pending, abandoned)
+   * @param {string} otp - OTP code from customer
+   * @returns {Promise<Object>} - Submission response
    */
-  async getTransactionStatus(reference) {
-    try {
-      const result = await this.verifyTransaction(reference);
-      return result.status;
-    } catch (error) {
-      return 'failed';
-    }
-  }
-
-  /**
-   * Charge Mobile Money (Alternative method using charge endpoint)
-   * @param {Object} data - Charge data
-   * @returns {Promise<Object>} - Charge response
-   */
-  async chargeMobileMoney(data) {
-    const { amount, phone, email, saleId } = data;
-
+  async submitOTP(reference, otp) {
     if (!this.secretKey) {
       throw new Error('Paystack is not configured.');
     }
 
-    const formattedPhone = this.formatPhoneNumber(phone);
-    const amountInPesewas = this.convertToPesewas(amount);
-    const reference = this.generateReference();
-    const customerEmail = email || `customer-${Date.now()}@goxpress.local`;
-
-    const payload = {
-      email: customerEmail,
-      amount: amountInPesewas,
-      currency: 'GHS',
-      reference: reference,
-      mobile_money: {
-        phone: formattedPhone,
-        provider: 'mtn'
-      },
-      metadata: {
-        sale_id: saleId,
-        phone: formattedPhone
-      }
-    };
-
     try {
+      console.log(`📤 Submitting OTP for transaction: ${reference}`);
+      
       const response = await axios.post(
-        `${PAYSTACK_BASE_URL}/charge`,
-        payload,
+        `${PAYSTACK_BASE_URL}/charge/submit_otp`,
+        {
+          otp: otp,
+          reference: reference
+        },
         {
           headers: {
             Authorization: `Bearer ${this.secretKey}`,
@@ -245,16 +238,17 @@ class PaystackService {
         }
       );
 
+      console.log('✅ OTP submission response:', response.data);
+
       return {
-        success: true,
+        success: response.data.status,
         data: response.data.data,
-        reference: reference,
         message: response.data.message
       };
     } catch (error) {
-      console.error('Paystack charge error:', error.response?.data || error.message);
+      console.error('❌ OTP submission error:', error.response?.data || error.message);
       throw new Error(
-        error.response?.data?.message || 'Failed to charge mobile money'
+        error.response?.data?.message || 'Failed to submit OTP'
       );
     }
   }

@@ -1,57 +1,66 @@
 import { useState, useEffect } from 'react';
-import api from '../api';
+import { api } from '../services/api.js';
 
 const MobileMoneyPayment = ({ saleId, amount, onSuccess, onCancel }) => {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [provider, setProvider] = useState('mtn'); // mtn, vod, tgo
+  const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [paymentReference, setPaymentReference] = useState(null);
-  const [paymentStatus, setPaymentStatus] = useState('idle'); // idle, pending, success, failed
+  const [paymentStatus, setPaymentStatus] = useState('idle'); // idle, otp_required, processing, success, failed
   const [statusMessage, setStatusMessage] = useState('');
+  const [pollingInterval, setPollingInterval] = useState(null);
 
-  // Poll for payment status
+  // Cleanup polling on unmount
   useEffect(() => {
-    if (!paymentReference || paymentStatus !== 'pending') return;
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+    };
+  }, [pollingInterval]);
 
-    const pollInterval = setInterval(async () => {
+  const startPolling = (ref) => {
+    let pollCount = 0;
+    const maxPolls = 60; // Poll for up to 5 minutes (60 * 5 seconds)
+    
+    const interval = setInterval(async () => {
       try {
-        const response = await api.get(`/payments/status/${paymentReference}`);
-        const { status } = response.data;
-
-        if (status === 'completed') {
+        pollCount++;
+        const response = await api.get(`/payments/status/${ref}`);
+        
+        console.log(`📊 Poll ${pollCount}: Payment status:`, response.data.status);
+        
+        if (response.data.status === 'success' || response.data.status === 'completed') {
+          clearInterval(interval);
           setPaymentStatus('success');
           setStatusMessage('Payment successful! 🎉');
-          clearInterval(pollInterval);
-          
-          // Call success callback after a short delay
           setTimeout(() => {
-            onSuccess(paymentReference);
+            onSuccess({ reference: ref });
           }, 1500);
-        } else if (status === 'failed') {
+        } else if (response.data.status === 'failed') {
+          clearInterval(interval);
           setPaymentStatus('failed');
-          setStatusMessage('Payment failed. Please try again.');
-          clearInterval(pollInterval);
+          setStatusMessage('Payment failed. Customer may have declined or cancelled.');
+        } else if (pollCount >= maxPolls) {
+          clearInterval(interval);
+          setPaymentStatus('failed');
+          setStatusMessage('Payment timeout. Please try again.');
         }
       } catch (err) {
         console.error('Status check error:', err);
+        if (pollCount >= maxPolls) {
+          clearInterval(interval);
+          setPaymentStatus('failed');
+          setStatusMessage('Could not verify payment status.');
+        }
       }
-    }, 3000); // Poll every 3 seconds
-
-    // Stop polling after 5 minutes
-    const timeout = setTimeout(() => {
-      clearInterval(pollInterval);
-      if (paymentStatus === 'pending') {
-        setPaymentStatus('failed');
-        setStatusMessage('Payment timeout. Please try again.');
-      }
-    }, 300000); // 5 minutes
-
-    return () => {
-      clearInterval(pollInterval);
-      clearTimeout(timeout);
-    };
-  }, [paymentReference, paymentStatus, onSuccess]);
+    }, 5000); // Poll every 5 seconds
+    
+    setPollingInterval(interval);
+  };
 
   const formatPhoneNumber = (value) => {
     // Remove all non-digit characters
@@ -74,6 +83,19 @@ const MobileMoneyPayment = ({ saleId, amount, onSuccess, onCancel }) => {
     const formatted = formatPhoneNumber(e.target.value);
     setPhone(formatted);
     setError('');
+    
+    // Auto-detect provider from phone prefix
+    const cleaned = formatted.replace(/\D/g, '');
+    if (cleaned.length >= 3) {
+      const prefix = cleaned.substring(0, 3);
+      if (['024', '054', '055', '059', '053'].includes(prefix)) {
+        setProvider('mtn');
+      } else if (['020', '050'].includes(prefix)) {
+        setProvider('vod');
+      } else if (['027', '057', '026', '056'].includes(prefix)) {
+        setProvider('tgo');
+      }
+    }
   };
 
   const validatePhone = (phoneNumber) => {
@@ -88,18 +110,7 @@ const MobileMoneyPayment = ({ saleId, amount, onSuccess, onCancel }) => {
       return 'Phone number must start with 0';
     }
     
-    // Check for valid Ghana network prefixes
-    const prefix = cleaned.substring(0, 3);
-    const validPrefixes = [
-      '024', '054', '055', '059', // MTN
-      '020', '050', // Vodafone
-      '027', '057', '026', '056'  // AirtelTigo
-    ];
-    
-    if (!validPrefixes.includes(prefix)) {
-      return 'Invalid network prefix. Use MTN, Vodafone, or AirtelTigo number';
-    }
-    
+    // No strict prefix validation - cashier selects provider
     return null;
   };
 
@@ -119,19 +130,98 @@ const MobileMoneyPayment = ({ saleId, amount, onSuccess, onCancel }) => {
         saleId,
         amount,
         phone: phone.replace(/\s/g, ''), // Remove spaces
-        email: email || undefined
+        email: email || undefined,
+        provider: provider // Send selected provider
       });
 
       if (response.data.success) {
         setPaymentReference(response.data.payment.reference);
-        setPaymentStatus('pending');
-        setStatusMessage('Check your phone to approve the payment...');
+        
+        // Check if OTP is required or if it's direct approval
+        if (response.data.payment.requiresOTP) {
+          setPaymentStatus('otp_required');
+          setStatusMessage('Customer has received SMS with code. Enter the code below.');
+        } else {
+          // Direct MoMo prompt - customer approves on their phone
+          setPaymentStatus('pending');
+          setStatusMessage('Customer should approve payment on their phone...');
+          // Start polling for status
+          startPolling(response.data.payment.reference);
+        }
       }
     } catch (err) {
       console.error('Payment initiation error:', err);
-      setError(err.response?.data?.message || 'Failed to initiate payment. Please try again.');
+      const errorMessage = err.response?.data?.message || err.message || 'Failed to initiate payment. Please try again.';
+      console.error('Error details:', err.response?.data);
+      setError(errorMessage);
       setPaymentStatus('failed');
+      setStatusMessage(errorMessage);
     } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmitOTP = async () => {
+    if (!otp || otp.length < 4) {
+      setError('Please enter the complete code');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setPaymentStatus('processing');
+    setStatusMessage('Processing payment... This may take up to 10 seconds.');
+
+    try {
+      const response = await api.post('/payments/momo/submit-otp', {
+        reference: paymentReference,
+        otp: otp
+      });
+
+      if (response.data.success) {
+        setPaymentStatus('success');
+        setStatusMessage('Payment successful! 🎉');
+        
+        setTimeout(() => {
+          onSuccess({ reference: paymentReference });
+        }, 1500);
+      } else if (response.data.status === 'pending') {
+        // Payment still processing, wait longer
+        setStatusMessage('Payment is being processed... Checking again in 10 seconds.');
+        
+        // Wait 10 more seconds and check again
+        setTimeout(async () => {
+          try {
+            const statusCheck = await api.get(`/payments/status/${paymentReference}`);
+            
+            if (statusCheck.data.status === 'success' || statusCheck.data.status === 'completed') {
+              setPaymentStatus('success');
+              setStatusMessage('Payment successful! 🎉');
+              setTimeout(() => {
+                onSuccess({ reference: paymentReference });
+              }, 1500);
+            } else {
+              setPaymentStatus('failed');
+              setStatusMessage(response.data.message || 'Payment verification taking longer than expected. Please check Paystack dashboard.');
+              setLoading(false);
+            }
+          } catch (err) {
+            setPaymentStatus('failed');
+            setStatusMessage('Could not verify payment status. Please check Paystack dashboard.');
+            setLoading(false);
+          }
+        }, 10000);
+      } else {
+        setPaymentStatus('failed');
+        setStatusMessage(response.data.message || 'Payment failed. Please try again.');
+        setLoading(false);
+      }
+    } catch (err) {
+      console.error('OTP submission error:', err);
+      const errorMsg = err.response?.data?.message || 'Invalid code or payment failed. Please try again.';
+      setError(errorMsg);
+      setStatusMessage(errorMsg);
+      setPaymentStatus('otp_required');
       setLoading(false);
     }
   };
@@ -142,11 +232,20 @@ const MobileMoneyPayment = ({ saleId, amount, onSuccess, onCancel }) => {
     
     const prefix = cleaned.substring(0, 3);
     
-    if (['024', '054', '055', '059'].includes(prefix)) return 'MTN';
+    if (['024', '054', '055', '059', '053'].includes(prefix)) return 'MTN';
     if (['020', '050'].includes(prefix)) return 'Vodafone';
     if (['027', '057', '026', '056'].includes(prefix)) return 'AirtelTigo';
     
     return '';
+  };
+
+  const getProviderName = (code) => {
+    const providers = {
+      'mtn': 'MTN',
+      'vod': 'Vodafone',
+      'tgo': 'AirtelTigo'
+    };
+    return providers[code] || code;
   };
 
   const network = getNetworkFromPhone(phone);
@@ -160,6 +259,22 @@ const MobileMoneyPayment = ({ saleId, amount, onSuccess, onCancel }) => {
 
       {paymentStatus === 'idle' && (
         <div className="momo-payment-form">
+          <div style={{ 
+            background: '#e7f3ff', 
+            padding: '16px', 
+            borderRadius: '8px',
+            marginBottom: '20px',
+            fontSize: '14px',
+            lineHeight: '1.6'
+          }}>
+            <p style={{ margin: 0, fontWeight: '500' }}>
+              📱 <strong>How it works:</strong>
+            </p>
+            <p style={{ margin: '8px 0 0 0' }}>
+              Customer will receive a prompt on their phone. Enter your <strong>MoMo PIN</strong> to approve the payment.
+            </p>
+          </div>
+
           <div className="form-group">
             <label htmlFor="phone">Phone Number *</label>
             <input
@@ -177,7 +292,42 @@ const MobileMoneyPayment = ({ saleId, amount, onSuccess, onCancel }) => {
             )}
             {error && <span className="error-message">{error}</span>}
             <small className="input-hint">
-              Supported: MTN, Vodafone, AirtelTigo
+              Enter customer's 10-digit phone number
+            </small>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="provider">Network Provider *</label>
+            <select
+              id="provider"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              disabled={loading}
+              style={{
+                width: '100%',
+                padding: '12px',
+                fontSize: '16px',
+                border: '1px solid #ddd',
+                borderRadius: '8px',
+                backgroundColor: '#fff',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="mtn">MTN Mobile Money</option>
+              <option value="vod">Vodafone Cash</option>
+              <option value="tgo">AirtelTigo Money</option>
+            </select>
+            <small className="input-hint">
+              {network && network !== getProviderName(provider) && (
+                <span style={{ color: '#ff6b6b' }}>
+                  ⚠️ Phone prefix suggests {network}
+                </span>
+              )}
+              {network && network === getProviderName(provider) && (
+                <span style={{ color: '#51cf66' }}>
+                  ✓ Matches phone prefix
+                </span>
+              )}
             </small>
           </div>
 
@@ -217,25 +367,150 @@ const MobileMoneyPayment = ({ saleId, amount, onSuccess, onCancel }) => {
         </div>
       )}
 
+      {paymentStatus === 'otp_required' && (
+        <div className="momo-payment-otp">
+          <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+            <h4>📱 Customer Received SMS</h4>
+            <p className="momo-phone-display" style={{ fontSize: '16px', margin: '12px 0' }}>
+              {phone} ({network})
+            </p>
+          </div>
+          
+          <div style={{ 
+            background: '#fff3cd', 
+            padding: '16px', 
+            borderRadius: '8px',
+            marginBottom: '20px',
+            textAlign: 'left'
+          }}>
+            <p style={{ margin: '0 0 8px 0', fontWeight: '500' }}>
+              📲 Ask customer for the code from SMS
+            </p>
+            <p style={{ margin: 0, fontSize: '14px' }}>
+              Customer should tell you the 6-digit code they received
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="otp" style={{ fontWeight: 'bold' }}>Enter Code from Customer *</label>
+            <input
+              type="text"
+              id="otp"
+              value={otp}
+              onChange={(e) => {
+                setOtp(e.target.value.replace(/\D/g, ''));
+                setError('');
+              }}
+              placeholder="123456"
+              disabled={loading}
+              maxLength={6}
+              style={{
+                fontSize: '24px',
+                textAlign: 'center',
+                letterSpacing: '8px',
+                fontWeight: 'bold'
+              }}
+            />
+            {error && <span className="error-message">{error}</span>}
+          </div>
+
+          <div className="momo-actions">
+            <button
+              type="button"
+              onClick={() => {
+                setPaymentStatus('idle');
+                setPaymentReference(null);
+                setOtp('');
+                setError('');
+              }}
+              className="btn-secondary"
+              disabled={loading}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmitOTP}
+              className="btn-primary"
+              disabled={loading || !otp || otp.length < 4}
+            >
+              {loading ? 'Verifying...' : 'Submit Code'}
+            </button>
+          </div>
+
+          <p style={{ marginTop: '16px', fontSize: '12px', color: '#666', textAlign: 'center' }}>
+            Reference: <code>{paymentReference}</code>
+          </p>
+        </div>
+      )}
+
+      {paymentStatus === 'processing' && (
+        <div className="momo-payment-processing">
+          <div className="spinner"></div>
+          <h4>⏳ Processing Payment...</h4>
+          <p>{statusMessage}</p>
+          <p style={{ marginTop: '16px', fontSize: '12px', color: '#666' }}>
+            Reference: <code>{paymentReference}</code>
+          </p>
+          <p style={{ marginTop: '8px', fontSize: '13px', color: '#888' }}>
+            Please wait while we verify the payment with Paystack...
+          </p>
+        </div>
+      )}
+
       {paymentStatus === 'pending' && (
         <div className="momo-payment-pending">
           <div className="spinner"></div>
-          <h4>Waiting for Payment Approval</h4>
-          <p>{statusMessage}</p>
-          <p className="momo-phone-display">
+          <h4>⏳ Waiting for Customer Approval</h4>
+          <p className="momo-phone-display" style={{ fontSize: '18px', margin: '16px 0' }}>
             📱 {phone} ({network})
           </p>
-          <div className="momo-instructions">
-            <p><strong>Customer should:</strong></p>
-            <ol>
-              <li>Check their phone for MoMo prompt</li>
-              <li>Enter their MoMo PIN</li>
-              <li>Approve the payment</li>
+          
+          <div style={{ 
+            background: '#fff3cd', 
+            padding: '20px', 
+            borderRadius: '8px',
+            marginTop: '20px',
+            textAlign: 'left'
+          }}>
+            <p style={{ fontWeight: 'bold', fontSize: '16px', marginBottom: '12px' }}>
+              📲 Customer Instructions:
+            </p>
+            <ol style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+              <li><strong>Check your phone</strong> - You should receive a Mobile Money prompt</li>
+              <li><strong>Enter your MoMo PIN</strong> to approve the payment</li>
+              <li><strong>Wait a moment</strong> - Payment will be confirmed automatically</li>
             </ol>
+            
+            <div style={{ 
+              marginTop: '16px', 
+              padding: '12px', 
+              background: '#d1ecf1',
+              borderRadius: '6px',
+              fontSize: '14px'
+            }}>
+              <strong>💡 Note:</strong> The system is automatically checking payment status every 5 seconds.
+            </div>
           </div>
-          <p className="momo-reference">
+
+          <p style={{ marginTop: '20px', fontSize: '12px', color: '#666' }}>
             Reference: <code>{paymentReference}</code>
           </p>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (pollingInterval) clearInterval(pollingInterval);
+              setPaymentStatus('idle');
+              setPaymentReference(null);
+              setError('');
+              setStatusMessage('');
+            }}
+            className="btn-secondary"
+            style={{ marginTop: '20px' }}
+          >
+            Cancel
+          </button>
         </div>
       )}
 
@@ -252,7 +527,10 @@ const MobileMoneyPayment = ({ saleId, amount, onSuccess, onCancel }) => {
         <div className="momo-payment-failed">
           <div className="error-icon">✗</div>
           <h4>Payment Failed</h4>
-          <p>{statusMessage || error}</p>
+          <p style={{ color: '#666', marginTop: '12px' }}>{statusMessage || error}</p>
+          {error && error !== statusMessage && (
+            <p style={{ color: '#999', fontSize: '14px', marginTop: '8px' }}>{error}</p>
+          )}
           <div className="momo-actions">
             <button
               type="button"

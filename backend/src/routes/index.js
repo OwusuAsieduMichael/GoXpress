@@ -7,6 +7,7 @@ import reportRoutes from "./reportRoutes.js";
 import inventoryRoutes from "./inventoryRoutes.js";
 import dashboardRoutes from "./dashboardRoutes.js";
 import paymentRoutes from "./paymentRoutes.js";
+import contactRoutes from "./contactRoutes.js";
 
 const router = Router();
 
@@ -22,5 +23,6 @@ router.use("/dashboard", dashboardRoutes);
 router.use("/reports", reportRoutes);
 router.use("/inventory", inventoryRoutes);
 router.use("/payments", paymentRoutes);
+router.use("/contact", contactRoutes);
 
 export default router;

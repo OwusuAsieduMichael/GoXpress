@@ -1,4 +1,4 @@
-import passport from "passport";
+/*import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { pool } from "./db.js";
 import { env } from "./env.js";
@@ -72,4 +72,4 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
-export default passport;
+export default passport; */

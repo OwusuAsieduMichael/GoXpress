@@ -64,7 +64,7 @@ const Help = () => {
   };
 
   // Form submission handler
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     // Validate form
@@ -75,22 +75,39 @@ const Help = () => {
       return;
     }
     
-    // Submit form
+    // Submit form via API
     setIsSubmitting(true);
     
-    // Simulate form submission (log to console)
-    console.log("Form submitted:", formData);
-    
-    // Show success message
-    setTimeout(() => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+      const response = await fetch(`${apiUrl}/contact/support`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(formData)
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ message: 'Failed to send message' }));
+        throw new Error(data.message || 'Failed to send message');
+      }
+
+      const data = await response.json();
+
+      // Show success message
       setShowSuccess(true);
-      setIsSubmitting(false);
       
       // Close modal after 2 seconds
       setTimeout(() => {
         closeModal();
       }, 2000);
-    }, 500);
+    } catch (error) {
+      console.error('Form submission error:', error);
+      setErrors({ submit: error.message || 'Failed to send message. Please try again.' });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Escape key handler
@@ -330,6 +347,12 @@ const Help = () => {
                     />
                     {errors.message && <span className="form-error">{errors.message}</span>}
                   </div>
+
+                  {errors.submit && (
+                    <div className="form-error" style={{ marginBottom: '16px', padding: '12px', background: '#fee', borderRadius: '4px' }}>
+                      {errors.submit}
+                    </div>
+                  )}
 
                   <p className="form-helper-text">
                     <span className="material-icons-outlined" style={{ fontSize: "16px" }}>schedule</span>

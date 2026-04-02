@@ -2,6 +2,7 @@ import { Router } from "express";
 import { 
   createPayment,
   initiateMoMoPayment,
+  submitMoMoOTP,
   verifyPayment,
   handlePaystackWebhook,
   getPaymentBySaleId,
@@ -22,6 +23,7 @@ router.post("/", validate(paymentCreateSchema), createPayment);
 
 // Paystack Mobile Money routes
 router.post("/momo/initiate", initiateMoMoPayment);
+router.post("/momo/submit-otp", submitMoMoOTP);
 router.get("/verify/:reference", verifyPayment);
 router.get("/sale/:saleId", getPaymentBySaleId);
 router.get("/status/:reference", checkPaymentStatus);
