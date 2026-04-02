@@ -4,7 +4,7 @@ import express from "express";
 import session from "express-session";
 import helmet from "helmet";
 import morgan from "morgan";
-import passport from "./config/passport.js";
+// import passport from "./config/passport.js"; // Commented out - OAuth not configured yet
 import routes from "./routes/index.js";
 import { env } from "./config/env.js";
 import { errorHandler } from "./middleware/errorMiddleware.js";
@@ -40,8 +40,9 @@ app.use(
   })
 );
 
-app.use(passport.initialize());
-app.use(passport.session());
+// Passport OAuth - Commented out until Google OAuth is configured
+// app.use(passport.initialize());
+// app.use(passport.session());
 
 app.use("/api", routes);
 app.use(errorHandler);
