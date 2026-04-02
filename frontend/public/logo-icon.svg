@@ -1,0 +1,7 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Hexagon background -->
+  <path d="M24 4L36.6 11V26L24 33L11.4 26V11L24 4Z" fill="#FF8D2F"/>
+  
+  <!-- Lightning bolt -->
+  <path d="M27 13H21L19 21H23L20 28L28 18H24L27 13Z" fill="white" stroke="white" stroke-width="0.5" stroke-linejoin="round"/>
+</svg>

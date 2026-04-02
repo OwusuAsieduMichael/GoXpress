@@ -1,0 +1,5 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Compact icon for favicon -->
+  <rect width="32" height="32" rx="6" fill="#FF8D2F"/>
+  <path d="M18 8H12L10 13H14L11 19L20 11H16L18 8Z" fill="white" stroke="white" stroke-width="0.5" stroke-linejoin="round"/>
+</svg>

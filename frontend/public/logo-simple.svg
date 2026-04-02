@@ -1,0 +1,10 @@
+<svg width="140" height="40" viewBox="0 0 140 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Simplified icon -->
+  <circle cx="20" cy="20" r="18" fill="#FF8D2F"/>
+  <path d="M23 11H17L15 17H19L16 24L24 15H20L23 11Z" fill="white" stroke="white" stroke-width="0.5" stroke-linejoin="round"/>
+  
+  <!-- Text only -->
+  <text x="44" y="26" font-family="'Inter', 'Segoe UI', sans-serif" font-size="20" font-weight="700" fill="#1F2A44">
+    Go<tspan fill="#FF8D2F">X</tspan>press
+  </text>
+</svg>

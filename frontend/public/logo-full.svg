@@ -1,0 +1,15 @@
+<svg width="180" height="48" viewBox="0 0 180 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Icon: Lightning bolt in hexagon -->
+  <path d="M24 4L36.6 11V26L24 33L11.4 26V11L24 4Z" fill="#FF8D2F"/>
+  <path d="M27 13H21L19 21H23L20 28L28 18H24L27 13Z" fill="white" stroke="white" stroke-width="0.5" stroke-linejoin="round"/>
+  
+  <!-- Text: GoXpress -->
+  <text x="44" y="30" font-family="'Inter', 'Segoe UI', sans-serif" font-size="22" font-weight="700" fill="#1F2A44">
+    Go<tspan fill="#FF8D2F">X</tspan>press
+  </text>
+  
+  <!-- Tagline -->
+  <text x="44" y="40" font-family="'Inter', 'Segoe UI', sans-serif" font-size="8" font-weight="500" fill="#8D97A8" letter-spacing="0.5">
+    SAFE ORDER • SAFE DELIVERY
+  </text>
+</svg>
