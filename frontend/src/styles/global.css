@@ -3656,3 +3656,157 @@ body,
     width: 100%;
   }
 }
+
+/* ==================== PRINT STYLES ==================== */
+@media print {
+  /* Set page margins */
+  @page {
+    margin: 0.5in;
+  }
+  
+  /* Hide everything except the modal with receipt */
+  body * {
+    visibility: hidden;
+  }
+  
+  /* Show only modal backdrop and its contents */
+  .modal-backdrop,
+  .modal-backdrop *,
+  .modal,
+  .modal *,
+  .receipt,
+  .receipt * {
+    visibility: visible !important;
+  }
+  
+  /* Hide modal close button and action buttons when printing */
+  .modal-header,
+  .modal-header *,
+  .actions-row,
+  .actions-row * {
+    visibility: hidden !important;
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  
+  /* Position modal backdrop at top of page */
+  .modal-backdrop {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  /* Make modal full width for print */
+  .modal {
+    position: relative;
+    max-width: 100% !important;
+    width: 100% !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+  }
+  
+  .modal-body {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  /* Optimize receipt layout for print */
+  .receipt {
+    page-break-inside: avoid;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  /* Center receipt header with logo */
+  .receipt-header {
+    text-align: center;
+    margin: 0 0 20px 0 !important;
+    padding: 0 !important;
+  }
+  
+  .receipt-logo {
+    max-width: 120px !important;
+    width: 120px !important;
+    height: auto !important;
+    margin: 0 auto 16px !important;
+    display: block !important;
+    visibility: visible !important;
+  }
+  
+  .receipt-header h2,
+  .receipt-header p {
+    visibility: visible !important;
+    display: block !important;
+  }
+  
+  .receipt table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+  }
+  
+  .receipt table th,
+  .receipt table td {
+    border: 1px solid #000 !important;
+    padding: 8px !important;
+    text-align: left !important;
+  }
+  
+  .receipt table th {
+    background-color: #f0f0f0 !important;
+    font-weight: bold !important;
+  }
+  
+  .receipt .totals {
+    margin-top: 20px;
+    border-top: 2px solid #000;
+    padding-top: 10px;
+  }
+  
+  .receipt .totals p {
+    display: flex !important;
+    justify-content: space-between !important;
+    margin: 8px 0 !important;
+  }
+  
+  .receipt-footer {
+    text-align: center;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px dashed #000;
+  }
+  
+  /* Ensure text is black for print */
+  .receipt,
+  .receipt *,
+  .modal,
+  .modal * {
+    color: #000 !important;
+    background: white !important;
+  }
+  
+  /* Keep divider borders visible */
+  .receipt-divider {
+    border-color: #000 !important;
+  }
+  
+  /* Remove any shadows or effects */
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+  
+  /* Ensure images print */
+  img {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
