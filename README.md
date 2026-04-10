@@ -135,29 +135,29 @@ VITE_API_URL=http://localhost:5000/api
 
 ```text
 goxpress/
-â”œâ”€â”€ backend/
-â”‚   â”œâ”€â”€ src/
-â”‚   â”‚   â”œâ”€â”€ config/
-â”‚   â”‚   â”œâ”€â”€ controllers/
-â”‚   â”‚   â”œâ”€â”€ middleware/
-â”‚   â”‚   â”œâ”€â”€ models/
-â”‚   â”‚   â”œâ”€â”€ routes/
-â”‚   â”‚   â”œâ”€â”€ utils/
-â”‚   â”‚   â”œâ”€â”€ app.js
-â”‚   â”‚   â””â”€â”€ server.js
-â”‚   â”œâ”€â”€ sql/
-â”‚   â””â”€â”€ package.json
-â”œâ”€â”€ frontend/
-â”‚   â”œâ”€â”€ public/
-â”‚   â”œâ”€â”€ src/
-â”‚   â”‚   â”œâ”€â”€ components/
-â”‚   â”‚   â”œâ”€â”€ layouts/
-â”‚   â”‚   â”œâ”€â”€ pages/
-â”‚   â”‚   â”œâ”€â”€ styles/
-â”‚   â”‚   â”œâ”€â”€ App.jsx
-â”‚   â”‚   â””â”€â”€ main.jsx
-â”‚   â””â”€â”€ package.json
-â””â”€â”€ README.md
+|-- backend/
+|   |-- src/
+|   |   |-- config/         # app and environment configuration
+|   |   |-- controllers/    # request handlers
+|   |   |-- middleware/     # custom Express middleware
+|   |   |-- models/         # data models and validation schemas
+|   |   |-- routes/         # API route definitions
+|   |   |-- utils/          # shared helper functions
+|   |   |-- app.js          # Express app setup
+|   |   `-- server.js       # backend entry point
+|   |-- sql/                # SQL migrations
+|   `-- package.json
+|-- frontend/
+|   |-- public/             # static assets
+|   |-- src/
+|   |   |-- components/     # reusable UI components
+|   |   |-- layouts/        # layout wrappers
+|   |   |-- pages/          # page-level views
+|   |   |-- styles/         # CSS and styling files
+|   |   |-- App.jsx         # main application component
+|   |   `-- main.jsx        # frontend entry point
+|   `-- package.json
+`-- README.md
 ```
 
 ## Database (Main Tables)
