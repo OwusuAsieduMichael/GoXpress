@@ -17,7 +17,7 @@ git config --global user.email "your.email@example.com"
 2. Click the "+" icon in the top right
 3. Select "New repository"
 4. Fill in the details:
-   - **Repository name**: `goxpress-pos-system` (or your preferred name)
+   - **Repository name**: ` ` (or your preferred name)
    - **Description**: "Modern Point of Sale system built with React and Node.js"
    - **Visibility**: Choose Public or Private
    - **DO NOT** initialize with README, .gitignore, or license (we already have these)

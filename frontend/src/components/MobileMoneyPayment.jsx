@@ -170,7 +170,7 @@ const MobileMoneyPayment = ({ saleId, amount, onSuccess, onCancel }) => {
     setLoading(true);
     setError('');
     setPaymentStatus('processing');
-    setStatusMessage('Processing payment... This may take up to 10 seconds.');
+    setStatusMessage('Verifying code and processing payment...');
 
     try {
       const response = await api.post('/payments/momo/submit-otp', {
@@ -178,47 +178,41 @@ const MobileMoneyPayment = ({ saleId, amount, onSuccess, onCancel }) => {
         otp: otp
       });
 
-      if (response.data.success) {
+      console.log('OTP submission response:', response.data);
+
+      // Check the actual status from response
+      if (response.data.success && (response.data.status === 'success' || response.data.status === 'completed')) {
+        // Payment completed successfully
         setPaymentStatus('success');
         setStatusMessage('Payment successful! 🎉');
+        setLoading(false);
         
         setTimeout(() => {
           onSuccess({ reference: paymentReference });
         }, 1500);
-      } else if (response.data.status === 'pending') {
-        // Payment still processing, wait longer
-        setStatusMessage('Payment is being processed... Checking again in 10 seconds.');
-        
-        // Wait 10 more seconds and check again
-        setTimeout(async () => {
-          try {
-            const statusCheck = await api.get(`/payments/status/${paymentReference}`);
-            
-            if (statusCheck.data.status === 'success' || statusCheck.data.status === 'completed') {
-              setPaymentStatus('success');
-              setStatusMessage('Payment successful! 🎉');
-              setTimeout(() => {
-                onSuccess({ reference: paymentReference });
-              }, 1500);
-            } else {
-              setPaymentStatus('failed');
-              setStatusMessage(response.data.message || 'Payment verification taking longer than expected. Please check Paystack dashboard.');
-              setLoading(false);
-            }
-          } catch (err) {
-            setPaymentStatus('failed');
-            setStatusMessage('Could not verify payment status. Please check Paystack dashboard.');
-            setLoading(false);
-          }
-        }, 10000);
-      } else {
-        setPaymentStatus('failed');
-        setStatusMessage(response.data.message || 'Payment failed. Please try again.');
+      } else if (response.data.status === 'pending' || response.data.status === 'ongoing' || response.data.status === 'send_birthday') {
+        // Payment is still processing - customer needs to enter PIN
+        setPaymentStatus('pending');
+        setStatusMessage('Waiting for customer to enter their MoMo PIN...');
         setLoading(false);
+        
+        // Start polling for status updates
+        startPolling(paymentReference);
+      } else if (response.data.status === 'failed') {
+        // Payment actually failed
+        setPaymentStatus('failed');
+        setStatusMessage(response.data.message || 'Payment failed. Customer may have declined or entered wrong PIN.');
+        setLoading(false);
+      } else {
+        // Unknown status - treat as pending and poll
+        setPaymentStatus('pending');
+        setStatusMessage('Processing payment... Please wait.');
+        setLoading(false);
+        startPolling(paymentReference);
       }
     } catch (err) {
       console.error('OTP submission error:', err);
-      const errorMsg = err.response?.data?.message || 'Invalid code or payment failed. Please try again.';
+      const errorMsg = err.response?.data?.message || 'Failed to submit code. Please try again.';
       setError(errorMsg);
       setStatusMessage(errorMsg);
       setPaymentStatus('otp_required');

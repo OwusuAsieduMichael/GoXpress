@@ -10,6 +10,7 @@ import CustomersPage from "./pages/Customers.jsx";
 import ReportsPage from "./pages/Reports.jsx";
 import InventoryPage from "./pages/Inventory.jsx";
 import HelpPage from "./pages/Help.jsx";
+import UsersPage from "./pages/Users.jsx";
 import DiagnosticPage from "./pages/DiagnosticPage.jsx";
 
 const App = () => (
@@ -32,6 +33,7 @@ const App = () => (
       <Route path="/customers" element={<CustomersPage />} />
       <Route path="/inventory" element={<InventoryPage />} />
       <Route path="/reports" element={<ReportsPage />} />
+      <Route path="/users" element={<UsersPage />} />
       <Route path="/help" element={<HelpPage />} />
     </Route>
     <Route path="*" element={<Navigate to="/login" replace />} />

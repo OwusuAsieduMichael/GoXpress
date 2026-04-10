@@ -29,7 +29,7 @@ router.put(
   validate(updateProductSchema),
   updateProduct
 );
-router.delete("/:id", requireRole("admin", "manager"), deleteProduct);
+router.delete("/:id", requireRole("admin"), deleteProduct); // Admin only
 
 router.get("/categories/list", getCategories);
 router.post(
@@ -44,6 +44,6 @@ router.put(
   validate(categorySchema),
   updateCategory
 );
-router.delete("/categories/:id", requireRole("admin", "manager"), deleteCategory);
+router.delete("/categories/:id", requireRole("admin"), deleteCategory); // Admin only
 
 export default router;

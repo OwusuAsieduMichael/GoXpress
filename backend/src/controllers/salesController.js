@@ -202,3 +202,70 @@ export const getSales = asyncHandler(async (req, res) => {
     }))
   });
 });
+
+/**
+ * Delete sale (Admin only)
+ * DELETE /api/sales/:id
+ */
+export const deleteSale = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  await withTransaction(async (client) => {
+    // Check if sale exists
+    const saleResult = await client.query(
+      'SELECT id, status FROM sales WHERE id = $1',
+      [id]
+    );
+
+    if (saleResult.rowCount === 0) {
+      throw new ApiError(404, 'Sale not found');
+    }
+
+    const sale = saleResult.rows[0];
+
+    // Get sale items to restore stock
+    const itemsResult = await client.query(
+      'SELECT product_id, quantity FROM sale_items WHERE sale_id = $1',
+      [id]
+    );
+
+    // Restore stock for each item
+    for (const item of itemsResult.rows) {
+      await client.query(
+        `UPDATE inventory 
+         SET stock_quantity = stock_quantity + $1,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE product_id = $2`,
+        [item.quantity, item.product_id]
+      );
+
+      // Log the stock adjustment
+      await client.query(
+        `INSERT INTO inventory_adjustments 
+          (product_id, quantity_change, reason, adjusted_by, notes)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          item.product_id,
+          item.quantity,
+          'sale_deletion',
+          req.user.userId,
+          `Stock restored from deleted sale #${id}`
+        ]
+      );
+    }
+
+    // Delete payment record
+    await client.query('DELETE FROM payments WHERE sale_id = $1', [id]);
+
+    // Delete sale items
+    await client.query('DELETE FROM sale_items WHERE sale_id = $1', [id]);
+
+    // Delete sale
+    await client.query('DELETE FROM sales WHERE id = $1', [id]);
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Sale deleted successfully and stock restored'
+  });
+});

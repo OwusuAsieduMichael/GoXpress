@@ -10,7 +10,8 @@ const navItems = [
   { to: "/products", label: "Products", icon: "inventory_2", roles: ["admin", "manager", "cashier"] },
   { to: "/inventory", label: "Inventory", icon: "warehouse", roles: ["admin", "manager", "cashier"] },
   { to: "/customers", label: "Customers", icon: "group", roles: ["admin", "manager", "cashier"] },
-  { to: "/reports", label: "Reports", icon: "analytics", roles: ["admin", "manager", "cashier"] }
+  { to: "/reports", label: "Reports", icon: "analytics", roles: ["admin", "manager", "cashier"] },
+  { to: "/users", label: "Users", icon: "manage_accounts", roles: ["admin"] } // Admin only
 ];
 
 const Sidebar = ({ onNavigate, onToggleSidebar, theme, onSetTheme, isCollapsed }) => {
